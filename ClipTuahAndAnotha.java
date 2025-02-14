@@ -1,176 +1,160 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.CRServo;
-import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import com.qualcomm.robotcore.util.ElapsedTime;
-import org.firstinspires.ftc.teamcode.hardware.Slide;
+import com.qualcomm.robotcore.hardware.CRServo;
+import com.qualcomm.hardware.sparkfun.SparkFunOTOS;
 import org.firstinspires.ftc.teamcode.hardware.Drive;
-import org.firstinspires.ftc.robotcore.internal.system.Deadline;
-import java.util.concurrent.TimeUnit;
+import org.firstinspires.ftc.teamcode.hardware.Slide;
+import org.firstinspires.ftc.teamcode.resources.PIDController2D;
 
-@Autonomous(name = "Clip tuah and anotha(hopefully)", group = "Robot")
+@Autonomous
 
-public class ClipTuahAndAnotha extends LinearOpMode 
-{
-    private ElapsedTime runtime = new ElapsedTime();
+public class ClipTuahAndAnotha extends LinearOpMode {
+
     private CRServo claw;
-    private DcMotor slide;
+    private SparkFunOTOS otos;
     private Drive robot;
-    Deadline rateLimit = new Deadline(250, TimeUnit.MILLISECONDS);
-
-    static final double DRIVE_SPEED = 0.5;
-    static final double TURN_SPEED = 0.5;
-
+    private Slide slide;
+    private PIDController2D pidController;
+    
     @Override
-    public void runOpMode() throws InterruptedException 
-    {
+
+    public void runOpMode() throws InterruptedException {
+        pidController = new PIDController2D(0.04, 0.1, 0.0, 0.04, 0.0, 0.0, 0.1, 0.0, 0.0, 1.5);
+        double targetX, targetY;
         claw = hardwareMap.crservo.get("claw");
-        slide = hardwareMap.dcMotor.get("slide");
+        slide = new Slide(hardwareMap, this);
         robot = new Drive(hardwareMap, this);
 
-        slide.setDirection(DcMotorSimple.Direction.REVERSE);
-        slide.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        slide.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-
-        YawPitchRollAngles orientation = robot.imu.getRobotYawPitchRollAngles();
-
-        telemetry.addData("Yaw (Z)", "%.1f Deg. (Heading)", orientation.getYaw(AngleUnit.DEGREES));
+        SparkFunOTOS.Pose2D pos = robot.getPosition();
+        
+        telemetry.addData("xPos", pos.x);
+        telemetry.addData("x",0);
+        telemetry.addData("yPos", pos.y);
+        telemetry.addData("y",0);
+        telemetry.addData("r",0);
+        
+        int stage = 0;
+        
         telemetry.update();
-        String state = "Begin";
+        
         waitForStart();
-        while (opModeIsActive() && state != "finished") 
-        {
-            switch(state)
-            {
-              case "Begin":  
+        while(opModeIsActive()){
+
+            switch(stage){
+                case 0:
+                    //grip specimen, move to bar lvl, move backarm back
                     claw.setPower(-0.25);
-                    slide.setTargetPosition(2750);
-                    robot.moveArm(450);
-                    slide.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-                    slide.setPower(1.43); 
-                    state = "step 1";
+                    slide.moveTo(2750);
+                    robot.moveArm(1000);
+                    stage++;
                     break;
-                case "step 1":
-                    robot.encoderDrive(0.5, 12.0, 12.0);
-                    state = "step 2";
-                    break;
-                case "step 2":
-                    if(!slide.isBusy())
-                    {
-                        robot.encoderDrive(0.5, -0.75,-0.75);
-                        state = "step 3";
+                case 1:
+                    //move to sub
+                    pidController.setTarget(0, 30, 0);
+                    if(pidController.atTarget && !slide.isBusy()){
+                        stage++;
                     }
                     break;
-                case "step 3":
-                    slide.setTargetPosition(2250);
-                    state = "step 4";
-                    rateLimit.reset();
-                    break;
-                case "step 4":
-                    if(!slide.isBusy() && rateLimit.hasExpired())
-                    {
-                        state = "step 5";
+                case 2:
+                    //clip specimen onto bar
+                    slide.moveTo(2250);
+                    if(!slide.isBusy()){
+                        stage++;
                     }
                     break;
-                case "step 5":
+                case 3:
+                    //release the specimen
                     claw.setPower(1);
-                    robot.encoderDrive(1,-2.0,-2.0);
-                    state = "step 6";
+                    Thread.sleep(250);
+                    stage++;
                     break;
-                case "step 6":
-                    robot.encoderDrive(0.75, -2.3, -2.3);
-                    state = "step 7";
-                    break;
-                case "step 7":
-                    robot.rotateTo(90,-0.35);
-                    robot.encoderDrive(1,7);
-                    robot.setPower(0.5);   
-                    state = "step 8";
-                    break;
-                case "step 8":  
-                    robot.moveLeft(0.5,4);
-                    state = "step 9";
-                    break;
-                case "step 9":
-                    robot.encoderDrive(0.35,0.4) 
-                    state = "step 10";
-                    break;
-                case "step 10":
-                    robot.moveRight(1,12);
-                    state = "step 11";
-                    break;
-                case "step 11":
-                    robot.moveLeft(1,12);
-                    @Thread.sleep(1000);
-                    state = "step 12";
-                    break;
-                case "step 12": 
-                    robot.encoderDrive(0.25, 5.75, 5.75); 
-                    claw.setPower(-0.25);
-                    Thread.sleep(400);
-                    state = "step 13";
-                    break;
-                case "step 13":
-                    slide.setTargetPosition(2750);
-                    robot.encoderDrive(1,-6);
-                    state = "step 14";
-                    break;
-                case "step 14":
-                    robot.moveRight(DRIVE_SPEED,12);
-                    state = "step 15";
-                     break;
-                case "step 15":
-                    if(!slide.isBusy())
-                    {
-                        state = "step 16";
+                case 4:
+                    //back up in order not to hit the frame
+                    pidController.setTarget(0, 26, 0);
+                    if(pidController.atTarget){
+                        stage++;
                     }
                     break;
-                case "step 16":
-                    robot.rotateTo(0,0.5);
-                    robot.moveLeft(0.5,12);
-                    robot.encoderDrive(0.25,5);
-                    robot.encoderDrive(0.5, -0.75);
-                    state = "step 17";
-                    break;
-                case "step 17":
-                    slide.setTargetPosition(2250);
-                    state = "step 18";
-                    rateLimit.reset();
-                    break;
-                case "step 18":
-                    if(!slide.isBusy() && rateLimit.hasExpired())
-                    {
-                        state = "step 19";
+                case 5:
+                    //move to the space between the sub and the samples on the ground
+                    pidController.setSpeedScale(2);
+                    pidController.setTarget(25, 26, 0);
+                    if(pidController.atTarget){
+                        stage++;
+                        robot.strafeDrive(0,0,0);
+                        Thread.sleep(100);
                     }
                     break;
-                case "step 19":
-                    claw.setPower(1);
-                    Thread.sleep(125);
-                    robot.encoderDrive(1,-2.0);
-                    state = "step 20";
+                case 6:
+                    //prepare to push sample(s) into observation zone
+                    pidController.setTarget(25, 52, 0);
+                    if(pidController.atTarget){
+                        stage++;
+                        Thread.sleep(100);
+                    }
                     break;
-                case "step 20":
-                    robot.encoderDrive(0.5,-12);
-                    slide.setTargetPosition(0);
-                    state = "step 21";
-                case "step 21":
-                    robot.moveRight(1, 24);
-                    state = "finished";
+                case 7:
+                    //move over to the sample
+                    pidController.setTarget(45, 52, 0);
+                    if(pidController.atTarget){
+                        //Right here theres an issue where it doesn't move to the left it just moves traight back
+                        //it is likely an issue with the atTarget Var because it gets reset at the end of the loop 
+                        //switching it to the end might help
+                        Thread.sleep(100);
+                        stage++;
+                    }
+                    break;
+                case 8:
+                    //push first sample
+                    pidController.setTarget(45, 4, 0);    
+                    if(pidController.atTarget){
+                        stage++;
+                    }
+                    break;
+                case 9: 
+                    //get out so human can grab sample
+                    pidController.setTarget(45, 25, 180);
+                    if(pidController.atTarget){
+                        stage++;
+                    }
+                    break;
+                case 10:
+                    //move slide to the right level and turn around
+                    slide.moveTo(850);
+                    robot.rotateTo(180);
+                case 11:
+                    //go to the wall SLOWLY
+                    pidController.setSpeedScale(4);
+                    pidController.setTarget(58, 1, 180);
+                    if(pidController.atTarget){
+                        stage++;
+                    }
                     break;
             }
-            telemetry.addData("heading", robot.getHeading());
-            telemetry.addData("Step", state);
+
+            pos = robot.getPosition();
+            double currentX  = pos.x;
+            double currentY  = pos.y;
+            double currentR  = pos.h;
+
+            double[] outputs = pidController.calculate(currentX, currentY);
+            double outputX   = outputs[0];
+            double outputY   = outputs[1];
+            //double outputR   = outputs[2];
+            telemetry.addData("xPos", pos.x);
+            telemetry.addData("X",outputX);
+            telemetry.addData("yPos", pos.y);
+            telemetry.addData("Y",outputY);
+            telemetry.addData("stage",stage);
             telemetry.update();
-        } 
-        
-        telemetry.addData("Path", "Complete");
-        telemetry.update();
-        sleep(1250);
-    }   
+            
+            robot.strafeDrive(outputX, outputY, 0);
+            Thread.sleep(12);
+        }
+    }    
 }
- 
